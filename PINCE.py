@@ -2860,6 +2860,8 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
 
     def tableWidget_Disassemble_key_press_event(self, event):
         selected_row = GuiUtils.get_current_row(self.tableWidget_Disassemble)
+        if selected_row == None:
+            return
         current_address_text = self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL).text()
         current_address = SysUtils.extract_address(current_address_text)
         current_address_int = int(current_address, 16)
