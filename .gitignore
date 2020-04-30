@@ -7,3 +7,4 @@ libscanmem.so*
 *.py[cod]
 *$py.class
 gdb_pince/*
+libPINCE/libscanmem
