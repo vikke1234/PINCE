@@ -28,6 +28,7 @@ import signal
 import sys
 import traceback
 import logging
+import getopt
 from time import sleep, time
 from typing import List
 import psutil
@@ -50,10 +51,10 @@ from application.GUI.ConsoleWidget import Ui_Form as ConsoleWidget
 from application.GUI.CustomAbstractTableModels.AsciiModel import QAsciiModel
 from application.GUI.CustomAbstractTableModels.HexModel import QHexModel
 from application.GUI.CustomValidators.HexValidator import QHexValidator
-from application.GUI.DissectCodeDialog import Ui_Dialog as DissectCodeDialog
 from application.GUI.EditTypeDialog import Ui_Dialog as EditTypeDialog
 from application.GUI.ExamineReferrersWidget import Ui_Form as ExamineReferrersWidget
 from application.GUI.FloatRegisterWidget import Ui_TabWidget as FloatRegisterWidget
+from application.GUI.Forms.DissectCodeDialogForm import DissectCodeDialogForm
 from application.GUI.FunctionsInfoWidget import Ui_Form as FunctionsInfoWidget
 from application.GUI.HexEditDialog import Ui_Dialog as HexEditDialog
 from application.GUI.InputDialog import Ui_Dialog as InputDialog
@@ -87,8 +88,7 @@ from application.Settings import Break, current_settings_version, show_messagebo
     SEARCH_OPCODE_ADDR_COL, SEARCH_OPCODE_OPCODES_COL, MEMORY_REGIONS_ADDR_COL, MEMORY_REGIONS_PERM_COL, \
     MEMORY_REGIONS_SIZE_COL, MEMORY_REGIONS_PATH_COL, MEMORY_REGIONS_RSS_COL, MEMORY_REGIONS_PSS_COL, \
     MEMORY_REGIONS_SHRCLN_COL, MEMORY_REGIONS_SHRDRTY_COL, MEMORY_REGIONS_PRIVCLN_COL, MEMORY_REGIONS_PRIVDRTY_COL, \
-    MEMORY_REGIONS_REF_COL, MEMORY_REGIONS_ANON_COL, MEMORY_REGIONS_SWAP_COL, DISSECT_CODE_ADDR_COL, \
-    DISSECT_CODE_PATH_COL, REF_STR_ADDR_COL, REF_STR_COUNT_COL, REF_STR_VAL_COL, REF_CALL_ADDR_COL, REF_CALL_COUNT_COL
+    MEMORY_REGIONS_REF_COL, MEMORY_REGIONS_ANON_COL, MEMORY_REGIONS_SWAP_COL, REF_STR_ADDR_COL, REF_STR_COUNT_COL, REF_STR_VAL_COL, REF_CALL_ADDR_COL, REF_CALL_COUNT_COL
 from application.Threads.AwaitAsyncOutputThread import AwaitAsyncOutput
 from application.Threads.AwaitProcessExitThread import AwaitProcessExit
 from application.Threads.UpdateAdressTableThread import UpdateAddressTableThread
@@ -96,6 +96,7 @@ from application.constants import PC_COLOUR, BOOKMARK_COLOUR, FROZEN_COL, VALUE_
     TYPE_COL, ADDR_EXPR_ROLE, BREAKPOINT_COLOUR
 from libPINCE import GuiUtils, SysUtils, GDB_Engine, type_defs
 from libPINCE.libscanmem.scanmem import Scanmem
+
 
 # used for automatically updating the values in the saved address tree widget
 # see UpdateAddressTableThread
@@ -147,7 +148,7 @@ class MainForm(QMainWindow, MainWindow):
             Hotkeys.toggle_attach_hotkey: self.toggle_attach_hotkey_pressed
         }
         for hotkey, func in hotkey_to_func.items():
-            current_shortcut = QShortcut(QKeySequence(hotkey.current_value), self)
+            current_shortcut = QShortcut(QKeySequence(hotkey.value), self)
             current_shortcut.activated.connect(func)
             current_shortcut.setContext(hotkey.context)
             self.hotkey_to_shortcut[hotkey.name] = current_shortcut
@@ -167,19 +168,20 @@ class MainForm(QMainWindow, MainWindow):
         try:
             settings_version = self.settings.value("Misc/version", type=str)
         except Exception as e:
-            print("An exception occurred while reading settings version\n", e)
+            logging.exception("An exception occurred while reading settings version")
             settings_version = None
         if settings_version != current_settings_version:
-            print("Settings version mismatch, rolling back to the default configuration")
+            logging.warning("Settings version mismatch, rolling back to the default configuration")
             self.settings.clear()
             self.set_default_settings()
         try:
             self.apply_settings()
         except Exception as e:
-            print("An exception occurred while trying to load settings, rolling back to the default configuration\n", e)
+            logging.exception("An exception occurred while trying to load settings, "
+                              "rolling back to the default configuration")
             self.settings.clear()
             self.set_default_settings()
-        print("gdb_path: {}".format(gdb_path))
+        logging.debug("gdb_path: {}".format(gdb_path))
         GDB_Engine.init_gdb(gdb_path=gdb_path)
         GDB_Engine.set_logging(gdb_logging)
         # this should be changed, only works if you use the current directory,
@@ -295,8 +297,8 @@ class MainForm(QMainWindow, MainWindow):
         application.Settings.auto_attach_regex = self.settings.value("General/auto_attach_regex", type=bool)
         GDB_Engine.set_gdb_output_mode(application.Settings.gdb_output_mode)
         for hotkey in Hotkeys.Hotkey.get_hotkeys():
-            hotkey.current_value = self.settings.value("Hotkeys/" + hotkey.name)
-            self.hotkey_to_shortcut[hotkey.name].setKey(QKeySequence(hotkey.current_value))
+            hotkey.value = self.settings.value("Hotkeys/" + hotkey.name)
+            self.hotkey_to_shortcut[hotkey.name].setKey(QKeySequence(hotkey.value))
         try:
             self.memory_view_window.set_dynamic_debug_hotkeys()
         except AttributeError:
@@ -315,18 +317,20 @@ class MainForm(QMainWindow, MainWindow):
     # Check if any process should be attached to automatically
     # Patterns at former positions have higher priority if regex is off
     def auto_attach(self):
+        logging.info("auto attach list: {}".format(auto_attach_list))
         if not auto_attach_list:
             return
         if auto_attach_regex:
             try:
                 compiled_re = re.compile(auto_attach_list)
-            except:
-                print("Auto-attach failed: " + auto_attach_list + " isn't a valid regex")
+            except re.error as e:
+                logging.exception("Could not compile regex: {!r}".format(auto_attach_list))
                 return
             for process in SysUtils.iterate_processes():
                 try:
                     name = process.name()
                 except psutil.NoSuchProcess:
+                    logging.error("could not find process: {}".format(process))
                     continue
                 if compiled_re.search(name):
                     self.attach_to_pid(process.pid)
@@ -337,6 +341,7 @@ class MainForm(QMainWindow, MainWindow):
                     try:
                         name = process.name()
                     except psutil.NoSuchProcess:
+                        logging.error("could not find process: {}".format(process))
                         continue
                     if name.find(target) != -1:
                         self.attach_to_pid(process.pid)
@@ -1750,9 +1755,9 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
     process_running = pyqtSignal()
 
     def set_dynamic_debug_hotkeys(self):
-        self.actionBreak.setText("Break[" + Hotkeys.break_hotkey.current_value + "]")
-        self.actionRun.setText("Run[" + Hotkeys.continue_hotkey.current_value + "]")
-        self.actionToggle_Attach.setText("Toggle Attach[" + Hotkeys.toggle_attach_hotkey.current_value + "]")
+        self.actionBreak.setText("Break[{}]".format(Hotkeys.break_hotkey.value))
+        self.actionRun.setText("Run[{}]".format(Hotkeys.continue_hotkey.value))
+        self.actionToggle_Attach.setText("Toggle Attach[{}]".format(Hotkeys.toggle_attach_hotkey.value))
 
     def set_debug_menu_shortcuts(self):
         self.shortcut_step = QShortcut(QKeySequence("F7"), self)
@@ -2643,11 +2648,19 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
 
     def tableWidget_Disassemble_key_press_event(self, event):
         selected_row = GuiUtils.get_current_row(self.tableWidget_Disassemble)
-        if selected_row == None:
+        if selected_row is None:
             return
-        current_address_text = self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL).text()
-        current_address = SysUtils.extract_address(current_address_text)
-        current_address_int = int(current_address, 16)
+        current_address_text: str = ""
+        current_address: str = ""
+        current_address_int: int = 0
+
+        try:
+            logging.info("table widget item: {}".format(self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL)))
+            current_address_text = self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL).text()
+            current_address = SysUtils.extract_address(current_address_text)
+            current_address_int = int(current_address, 16)
+        except AttributeError as e:
+            logging.exception("could not fetch address")
 
         actions = type_defs.KeyboardModifiersTupleDict([
             ((Qt.NoModifier, Qt.Key_Space), lambda: self.follow_instruction(selected_row)),
@@ -3360,7 +3373,7 @@ class TrackBreakpointWidgetForm(QWidget, TrackBreakpointWidget):
             QMessageBox.information(self, "Error", "Unable to track breakpoint at expression " + address)
             return
         self.label_Info.setText("Pause the process to refresh 'Value' part of the table(" +
-                                Hotkeys.pause_hotkey.current_value + " or " + Hotkeys.break_hotkey.current_value + ")")
+                                Hotkeys.pause_hotkey.value + " or " + Hotkeys.break_hotkey.value + ")")
         self.address = address
         self.breakpoint = breakpoint
         self.info = {}
@@ -4314,131 +4327,6 @@ class MemoryRegionsWidgetForm(QWidget, MemoryRegionsWidget):
         instances.remove(self)
 
 
-class DissectCodeDialogForm(QDialog, DissectCodeDialog):
-    scan_finished_signal = pyqtSignal()
-
-    def __init__(self, parent=None, int_address=-1):
-        super().__init__(parent=parent)
-        self.setupUi(self)
-        self.init_pre_scan_gui()
-        self.update_dissect_results()
-        self.show_memory_regions()
-        self.splitter.setStretchFactor(0, 1)
-        self.pushButton_StartCancel.clicked.connect(self.pushButton_StartCancel_clicked)
-        self.refresh_timer = QTimer()
-        self.refresh_timer.setInterval(100)
-        self.refresh_timer.timeout.connect(self.refresh_dissect_status)
-        if int_address != -1:
-            for row in range(self.tableWidget_ExecutableMemoryRegions.rowCount()):
-                item = self.tableWidget_ExecutableMemoryRegions.item(row, DISSECT_CODE_ADDR_COL).text()
-                start_addr, end_addr = item.split("-")
-                if int(start_addr, 16) <= int_address <= int(end_addr, 16):
-                    self.tableWidget_ExecutableMemoryRegions.clearSelection()
-                    self.tableWidget_ExecutableMemoryRegions.selectRow(row)
-                    self.pushButton_StartCancel_clicked()
-                    break
-            else:
-                QMessageBox.information(self, "Error", hex(int_address) + " isn't in a valid region range")
-        else:
-            if self.tableWidget_ExecutableMemoryRegions.rowCount() > 0:
-                self.tableWidget_ExecutableMemoryRegions.selectRow(0)
-
-    class BackgroundThread(QThread):
-        output_ready = pyqtSignal()
-        is_canceled = False
-
-        def __init__(self, region_list, discard_invalid_strings):
-            super().__init__()
-            self.region_list = region_list
-            self.discard_invalid_strings = discard_invalid_strings
-
-        def run(self):
-            GDB_Engine.dissect_code(self.region_list, self.discard_invalid_strings)
-            if not self.is_canceled:
-                self.output_ready.emit()
-
-    def init_pre_scan_gui(self):
-        self.is_scanning = False
-        self.is_canceled = False
-        self.pushButton_StartCancel.setText("Start")
-
-    def init_after_scan_gui(self):
-        self.is_scanning = True
-        self.label_ScanInfo.setText("Currently scanning region:")
-        self.pushButton_StartCancel.setText("Cancel")
-
-    def refresh_dissect_status(self):
-        region, region_count, range, string_count, jump_count, call_count = GDB_Engine.get_dissect_code_status()
-        if not region:
-            return
-        self.label_RegionInfo.setText(region)
-        self.label_RegionCountInfo.setText(region_count)
-        self.label_CurrentRange.setText(range)
-        self.label_StringReferenceCount.setText(str(string_count))
-        self.label_JumpReferenceCount.setText(str(jump_count))
-        self.label_CallReferenceCount.setText(str(call_count))
-
-    def update_dissect_results(self):
-        try:
-            referenced_strings, referenced_jumps, referenced_calls = GDB_Engine.get_dissect_code_data()
-        except:
-            return
-        self.label_StringReferenceCount.setText(str(len(referenced_strings)))
-        self.label_JumpReferenceCount.setText(str(len(referenced_jumps)))
-        self.label_CallReferenceCount.setText(str(len(referenced_calls)))
-
-    def show_memory_regions(self):
-        executable_regions = SysUtils.filter_memory_regions(GDB_Engine.currentpid, "perms", "..x.")
-        self.region_list = executable_regions
-        self.tableWidget_ExecutableMemoryRegions.setRowCount(0)
-        self.tableWidget_ExecutableMemoryRegions.setRowCount(len(executable_regions))
-        for row, region in enumerate(executable_regions):
-            self.tableWidget_ExecutableMemoryRegions.setItem(row, DISSECT_CODE_ADDR_COL, QTableWidgetItem(region.addr))
-            self.tableWidget_ExecutableMemoryRegions.setItem(row, DISSECT_CODE_PATH_COL, QTableWidgetItem(region.path))
-        self.tableWidget_ExecutableMemoryRegions.resizeColumnsToContents()
-        self.tableWidget_ExecutableMemoryRegions.horizontalHeader().setStretchLastSection(True)
-
-    def scan_finished(self):
-        self.init_pre_scan_gui()
-        if not self.is_canceled:
-            self.label_ScanInfo.setText("Scan finished")
-        self.is_canceled = False
-        self.refresh_timer.stop()
-        self.refresh_dissect_status()
-        self.update_dissect_results()
-        self.scan_finished_signal.emit()
-
-    def pushButton_StartCancel_clicked(self):
-        if self.is_scanning:
-            self.is_canceled = True
-            self.background_thread.is_canceled = True
-            GDB_Engine.cancel_dissect_code()
-            self.refresh_timer.stop()
-            self.update_dissect_results()
-            self.label_ScanInfo.setText("Scan was canceled")
-            self.init_pre_scan_gui()
-        else:
-            if not GDB_Engine.inferior_status == type_defs.INFERIOR_STATUS.INFERIOR_STOPPED:
-                QMessageBox.information(self, "Error", "Please stop the process first")
-                return
-            selected_rows = self.tableWidget_ExecutableMemoryRegions.selectionModel().selectedRows()
-            if not selected_rows:
-                QMessageBox.information(self, "Error", "Select at least one region")
-                return
-            selected_indexes = [selected_row.row() for selected_row in selected_rows]
-            selected_regions = [self.region_list[selected_index] for selected_index in selected_indexes]
-            self.background_thread = self.BackgroundThread(selected_regions,
-                                                           self.checkBox_DiscardInvalidStrings.isChecked())
-            self.background_thread.output_ready.connect(self.scan_finished)
-            self.init_after_scan_gui()
-            self.refresh_timer.start()
-            self.background_thread.start()
-
-    def closeEvent(self, QCloseEvent):
-        GDB_Engine.cancel_dissect_code()
-        self.refresh_timer.stop()
-
-
 class ReferencedStringsWidgetForm(QWidget, ReferencedStringsWidget):
     def __init__(self, parent=None):
         super().__init__()
@@ -4828,6 +4716,25 @@ class ExamineReferrersWidgetForm(QWidget, ExamineReferrersWidget):
 
 
 if __name__ == "__main__":
+    help_message = "usage: sudo ./PINCE.py\n" \
+               " --ipc=path\n\tSpecifies the shared memory path, defaults to /dev/shm, this can be used to " \
+               "be able to run PINCE without super user access, it requires you to run " \
+               "'echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope'" \
+               "first though (see 'man ptrace' for more information)\n" \
+               "-h --help\n\tDisplay this message"
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "h", ["ipc=", "help"])
+    except getopt.GetoptError:
+        logging.error(help_message)
+        sys.exit(1)
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            print(help_message)
+            sys.exit(1)
+        if opt == "--ipc":
+            type_defs.IPC_PATHS.PINCE_IPC_PATH = arg
+    logging.basicConfig(level=logging.DEBUG)
+    print("ipc path: {}".format(type_defs.IPC_PATHS.PINCE_IPC_PATH))
     app = QApplication(sys.argv)
     window = MainForm()
     window.show()

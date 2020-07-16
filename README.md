@@ -100,6 +100,15 @@ sudo apt-get install pyqt5-dev-tools (pyuic5)
 sudo pip3 install line_profiler (for performance testing)
 ```
 How to use line_profiler: Add ```@profile``` tag to the desired function and run PINCE with ```sudo kernprof -l -v PINCE.py```
+
+To run PINCE without super user access run ```echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope``` it will allow 
+ptrace to function without the need of sudo, though with an increased security risk. It will reset at reboot, if you
+want it to persist at each reboot you need to change the file see [this SO post](https://unix.stackexchange.com/questions/329504/proc-sys-kernel-yama-ptrace-scope-keeps-resetting-to-1).
+
+When you've changed the ptrace_scope you then run PINCE and pass the path to a folder PINCE can use
+ with the ```--ipc=path``` flag. It defaults to `/dev/shm/PINCE-connection/`, which is POSIX shared-memory, you can change this to
+ for example (NOTE: this is heavily dependent on your distribution, and may not be available on yours): `/run/user/1000`, you can run `mount | grep tmpfs` to find
+ different folders you can use.
 # History
 - A few weeks till 17/01/2016 : Learned GDB, process of analysis
 - 17/01/2016-22/01/2016 : Basic design, grasping of Python3 and Pyqt5, proof-testing

@@ -491,12 +491,13 @@ def init_gdb(additional_commands="", gdb_path=type_defs.PATHS.GDB_PATH):
     last_gdb_command = ""
 
     libpince_dir = SysUtils.get_libpince_directory()
-    child = pexpect.spawn("sudo LC_NUMERIC=C {} --interpreter=mi".format(gdb_path), cwd=libpince_dir,
-                          encoding="utf-8")
+    gdb_path = "{}/{}".format(libpince_dir, gdb_path)
+    child = pexpect.spawn("{} --interpreter=mi".format(gdb_path), cwd=libpince_dir,
+                          encoding="utf-8", env={"LC_NUMERIC": "C"})
     child.setecho(False)
     child.delaybeforesend = 0
     child.timeout = None
-    child.expect_exact("(gdb)")
+    child.expect_exact("(gdb)", timeout=10)
     status_thread = Thread(target=state_observe_thread)
     status_thread.daemon = True
     status_thread.start()

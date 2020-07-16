@@ -27,11 +27,11 @@ class Hotkey:
     """
     __instances = []
     def __init__(self, name: str = "", desc: str = "",
-                 default: str = "", current_value: str = "", context=QtCore.Qt.ApplicationShortcut):
+                 default: str = "", value: str = "", context=QtCore.Qt.ApplicationShortcut):
         self.name = name
         self.desc = desc
         self.default = default
-        self.current_value = current_value
+        self.value = value
         self.context = context
         self.__instances.append(self)
 

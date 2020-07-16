@@ -15,7 +15,6 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-from PyQt5.QtCore import Qt
 from enum import Enum
 from libPINCE import type_defs
 
@@ -131,8 +130,6 @@ MEMORY_REGIONS_ANON_COL = 11
 MEMORY_REGIONS_SWAP_COL = 12
 
 # represents the index of columns in dissect code table
-DISSECT_CODE_ADDR_COL = 0
-DISSECT_CODE_PATH_COL = 1
 
 # represents the index of columns in referenced calls table
 REF_STR_ADDR_COL = 0
