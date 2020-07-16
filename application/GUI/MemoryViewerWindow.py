@@ -904,7 +904,7 @@ class Ui_MainWindow_MemoryView(object):
         self.actionReferenced_Strings.setText(_translate("MainWindow_MemoryView", "R&eferenced Strings"))
         self.actionReferenced_Calls.setText(_translate("MainWindow_MemoryView", "Referenced &Calls"))
         self.actionToggle_Attach.setText(_translate("MainWindow_MemoryView", "To&ggle Attach"))
-from GUI.CustomLabels.FlagRegisterLabel import QFlagRegisterLabel
-from GUI.CustomLabels.RegisterLabel import QRegisterLabel
-from GUI.CustomTableViews.AsciiView import QAsciiView
-from GUI.CustomTableViews.HexView import QHexView
+from application.GUI.CustomLabels.FlagRegisterLabel import QFlagRegisterLabel
+from application.GUI.CustomLabels.RegisterLabel import QRegisterLabel
+from application.GUI.CustomTableViews.AsciiView import QAsciiView
+from application.GUI.CustomTableViews.HexView import QHexView

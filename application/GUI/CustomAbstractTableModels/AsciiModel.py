@@ -16,7 +16,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 from PyQt5.QtCore import QVariant, Qt
 from PyQt5.QtGui import QColor
-from GUI.CustomAbstractTableModels.HexModel import QHexModel
+from application.GUI.CustomAbstractTableModels.HexModel import QHexModel
 
 from libPINCE import SysUtils, GDB_Engine
 

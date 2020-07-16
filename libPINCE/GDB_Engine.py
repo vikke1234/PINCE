@@ -491,7 +491,7 @@ def init_gdb(additional_commands="", gdb_path=type_defs.PATHS.GDB_PATH):
     last_gdb_command = ""
 
     libpince_dir = SysUtils.get_libpince_directory()
-    child = pexpect.spawn('sudo LC_NUMERIC=C ' + gdb_path + ' --interpreter=mi', cwd=libpince_dir,
+    child = pexpect.spawn("sudo LC_NUMERIC=C {} --interpreter=mi".format(gdb_path), cwd=libpince_dir,
                           encoding="utf-8")
     child.setecho(False)
     child.delaybeforesend = 0

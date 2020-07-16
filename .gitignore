@@ -8,3 +8,4 @@ libscanmem.so*
 *$py.class
 gdb_pince/*
 libPINCE/libscanmem
+venv
