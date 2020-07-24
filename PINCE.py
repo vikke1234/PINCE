@@ -42,9 +42,9 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessag
 
 import application.Settings
 from application import Hotkeys
+from application.GUI.Forms.AboutWidgetForm import AboutWidgetForm
 from application.instance_storage import instances
 from application.CheckInferiorStatus import CheckInferiorStatus
-from application.GUI.AboutWidget import Ui_TabWidget as AboutWidget
 from application.GUI.AddAddressManuallyDialog import Ui_Dialog as ManualAddressDialog
 from application.GUI.BookmarkWidget import Ui_Form as BookmarkWidget
 from application.GUI.BreakpointInfoWidget import Ui_TabWidget as BreakpointInfoWidget
@@ -1725,28 +1725,6 @@ class ConsoleWidgetForm(QWidget, ConsoleWidget):
     def closeEvent(self, QCloseEvent):
         self.await_async_output_thread.stop()
         instances.remove(self)
-
-
-class AboutWidgetForm(QTabWidget, AboutWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.setupUi(self)
-        GuiUtils.center(self)
-        license_text = open("COPYING").read()
-        authors_text = open("AUTHORS").read()
-        thanks_text = open("THANKS").read()
-        self.textBrowser_License.setPlainText(license_text)
-        self.textBrowser_Contributors.append(
-            "This is only a placeholder, this section may look different when the project finishes" +
-            "\nIn fact, something like a demo-scene for here would look absolutely fabulous <:")
-        self.textBrowser_Contributors.append("\n########")
-        self.textBrowser_Contributors.append("#AUTHORS#")
-        self.textBrowser_Contributors.append("########\n")
-        self.textBrowser_Contributors.append(authors_text)
-        self.textBrowser_Contributors.append("\n#######")
-        self.textBrowser_Contributors.append("#THANKS#")
-        self.textBrowser_Contributors.append("#######\n")
-        self.textBrowser_Contributors.append(thanks_text)
 
 
 class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
