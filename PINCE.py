@@ -42,6 +42,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessag
 
 import application.Settings
 from application import Hotkeys
+from application.instance_storage import instances
 from application.CheckInferiorStatus import CheckInferiorStatus
 from application.GUI.AboutWidget import Ui_TabWidget as AboutWidget
 from application.GUI.AddAddressManuallyDialog import Ui_Dialog as ManualAddressDialog
@@ -101,7 +102,6 @@ from libPINCE.libscanmem.scanmem import Scanmem
 # used for automatically updating the values in the saved address tree widget
 # see UpdateAddressTableThread
 saved_addresses_changed_list:List = []
-
 
 def except_hook(exception_type, value, tb):
     if show_messagebox_on_exception:
@@ -1571,7 +1571,6 @@ class ConsoleWidgetForm(QWidget, ConsoleWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setupUi(self)
-        global instances
         instances.append(self)
         GuiUtils.center(self)
         self.completion_model = QStringListModel()
@@ -4727,12 +4726,14 @@ if __name__ == "__main__":
     except getopt.GetoptError:
         logging.error(help_message)
         sys.exit(1)
+
     for opt, arg in opts:
         if opt in ("-h", "--help"):
             print(help_message)
             sys.exit(1)
         if opt == "--ipc":
             type_defs.IPC_PATHS.PINCE_IPC_PATH = arg
+
     logging.basicConfig(level=logging.DEBUG)
     print("ipc path: {}".format(type_defs.IPC_PATHS.PINCE_IPC_PATH))
     app = QApplication(sys.argv)

@@ -18,7 +18,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # IMPORTANT: Any constant involving only PINCE.py should be declared in PINCE.py
 
-import collections, queue, sys
+import collections
+import queue
+import sys
+import os
 
 
 class CONST_TIME:
@@ -26,11 +29,11 @@ class CONST_TIME:
 
 
 class PATHS:
-    GDB_PATH = "./gdb_pince/gdb-8.3.1/bin/gdb"
+    GDB_PATH = "{}/libPINCE/gdb_pince/gdb-8.3.1/bin/gdb".format(os.getcwd())
 
 
 class IPC_PATHS:
-    PINCE_IPC_PATH = "/dev/shm/PINCE-connection/"  # Use SysUtils.get_PINCE_IPC_directory()
+    PINCE_IPC_PATH = "/dev/shm/" if not os.environ.get("IPC_PATH") else os.environ.get("IPC_PATH")  # Use SysUtils.get_PINCE_IPC_directory()
     IPC_FROM_PINCE_PATH = "/from_PINCE_file"  # Use SysUtils.get_IPC_from_PINCE_file()
     IPC_TO_PINCE_PATH = "/to_PINCE_file"  # Use SysUtils.get_IPC_to_PINCE_file()
 

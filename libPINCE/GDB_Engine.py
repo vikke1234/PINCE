@@ -15,10 +15,20 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
+import ctypes
+import json
+import logging
+import os
+import pickle
+import re
+import shelve
+import struct
+from collections import OrderedDict, defaultdict
 from threading import Lock, Thread, Condition
 from time import sleep, time
-from collections import OrderedDict, defaultdict
-import pexpect, os, ctypes, pickle, json, shelve, re, struct
+
+import pexpect
+
 from . import SysUtils, type_defs, common_regexes
 
 self_pid = os.getpid()
@@ -62,7 +72,7 @@ breakpoint_on_hit_dict = {}
 # Format: [[[address1, size1], [address2, size2], ...], [[address1, size1], ...], ...]
 chained_breakpoints = []
 
-child = object  # this object will be used with pexpect operations
+gdb_process = object  # this object will be used with pexpect operations
 
 #:tag:ConditionsLocks
 #:doc:
@@ -191,7 +201,7 @@ def send_command(command, control=False, cli_output=False, send_with_file=False,
         You don't have to write interpreter-exec while sending a gdb/mi command. Just pass the gdb/mi command as itself.
         This function will convert it automatically.
     """
-    global child
+    global gdb_process
     global gdb_output
     global cancel_send_command
     global last_gdb_command
@@ -205,7 +215,8 @@ def send_command(command, control=False, cli_output=False, send_with_file=False,
         gdb_output = ""
         if send_with_file:
             send_file = SysUtils.get_IPC_from_PINCE_file(currentpid)
-            pickle.dump(file_contents_send, open(send_file, "wb"))
+            with open(send_file, "wb") as f:
+                pickle.dump(file_contents_send, f)
         if recv_with_file or cli_output:
             recv_file = SysUtils.get_IPC_to_PINCE_file(currentpid)
 
@@ -217,17 +228,16 @@ def send_command(command, control=False, cli_output=False, send_with_file=False,
         if gdb_output_mode.command_info:
             print("Last command: " + last_gdb_command)
         if control:
-            child.sendcontrol(command)
+            gdb_process.sendcontrol(command)
         else:
             command_file = SysUtils.get_gdb_command_file(currentpid)
-            command_fd = open(command_file, "r+")
-            command_fd.truncate()
-            command_fd.write(command)
-            command_fd.close()
+            with open(command_file, "r+") as command_fd:
+                command_fd.truncate()
+                command_fd.write(command)
             if not cli_output:
-                child.sendline("source " + command_file)
+                gdb_process.sendline("source " + command_file)
             else:
-                child.sendline("cli-output source " + command_file)
+                gdb_process.sendline("cli-output source " + command_file)
         if not control:
             while not gdb_output:
                 sleep(type_defs.CONST_TIME.GDB_INPUT_SLEEP)
@@ -235,12 +245,13 @@ def send_command(command, control=False, cli_output=False, send_with_file=False,
                     break
             if not cancel_send_command:
                 if recv_with_file or cli_output:
-                    output = pickle.load(open(recv_file, "rb"))
+                    with open(recv_file, "rb") as f:
+                        output = pickle.load(f)
                 else:
                     output = gdb_output
             else:
                 output = ""
-                child.sendcontrol("c")
+                gdb_process.sendcontrol("c")
                 with gdb_waiting_for_prompt_condition:
                     gdb_waiting_for_prompt_condition.wait()
         else:
@@ -262,7 +273,7 @@ def await_process_exit():
     Should be called by creating a thread. Usually called in initialization process by attach function
     """
     while True:
-        if currentpid is -1 or SysUtils.is_process_valid(currentpid):
+        if currentpid == -1 or SysUtils.is_process_valid(currentpid):
             sleep(0.1)
         else:
             with process_exited_condition:
@@ -283,7 +294,7 @@ def state_observe_thread():
         if cache:
             data = cache
         else:
-            data = child.before
+            data = gdb_process.before
         matches = common_regexes.gdb_state_observe.findall(data)
         if len(matches) > 0:
             global stop_reason
@@ -297,34 +308,34 @@ def state_observe_thread():
             with status_changed_condition:
                 status_changed_condition.notify_all()
 
-    global child
+    global gdb_process
     global gdb_output
     stored_output = ""
     while True:
-        child.expect_exact("\r\n")  # A new line for TTY devices
-        child.before = child.before.strip()
-        if not child.before:
+        gdb_process.expect_exact("\r\n")  # A new line for TTY devices
+        gdb_process.before = gdb_process.before.strip()
+        if not gdb_process.before:
             continue
-        stored_output += "\n" + child.before
-        if child.before == "(gdb)":
+        stored_output += "\n" + gdb_process.before
+        if gdb_process.before == "(gdb)":
             check_inferior_status(stored_output)
             stored_output = ""
             continue
         command_file = re.escape(SysUtils.get_gdb_command_file(currentpid))
-        if common_regexes.gdb_command_source(command_file).search(child.before):
-            child.expect_exact("(gdb)")
-            child.before = child.before.strip()
+        if common_regexes.gdb_command_source(command_file).search(gdb_process.before):
+            gdb_process.expect_exact("(gdb)")
+            gdb_process.before = gdb_process.before.strip()
             check_inferior_status()
-            gdb_output = child.before
+            gdb_output = gdb_process.before
             stored_output = ""
             with gdb_waiting_for_prompt_condition:
                 gdb_waiting_for_prompt_condition.notify_all()
             if gdb_output_mode.command_output:
-                print(child.before)
+                print(gdb_process.before)
         else:
             if gdb_output_mode.async_output:
-                print(child.before)
-            gdb_async_output.broadcast_message(child.before)
+                print(gdb_process.before)
+            gdb_async_output.broadcast_message(gdb_process.before)
 
 
 def execute_with_temporary_interruption(func):
@@ -398,7 +409,7 @@ def can_attach(pid):
         bool: True if attaching is successful, False otherwise
     """
     result = libc.ptrace(16, int(pid), 0, 0)  # 16 is PTRACE_ATTACH, check ptrace.h for details
-    if result is -1:
+    if result == -1:
         return False
     os.waitpid(int(pid), 0)
     libc.ptrace(17, int(pid), 0, 17)  # 17 is PTRACE_DETACH, check ptrace.h for details
@@ -471,7 +482,7 @@ def init_gdb(additional_commands="", gdb_path=type_defs.PATHS.GDB_PATH):
     Note:
         Calling init_gdb() will reset the current session
     """
-    global child
+    global gdb_process
     global gdb_initialized
     global breakpoint_on_hit_dict
     global chained_breakpoints
@@ -491,13 +502,13 @@ def init_gdb(additional_commands="", gdb_path=type_defs.PATHS.GDB_PATH):
     last_gdb_command = ""
 
     libpince_dir = SysUtils.get_libpince_directory()
-    gdb_path = "{}/{}".format(libpince_dir, gdb_path)
-    child = pexpect.spawn("{} --interpreter=mi".format(gdb_path), cwd=libpince_dir,
-                          encoding="utf-8", env={"LC_NUMERIC": "C"})
-    child.setecho(False)
-    child.delaybeforesend = 0
-    child.timeout = None
-    child.expect_exact("(gdb)", timeout=10)
+    gdb_process = pexpect.spawn("{} --interpreter=mi".format(gdb_path), cwd=libpince_dir,
+                                encoding="utf-8", env={"LC_NUMERIC": "C",
+                                                       "IPC_PATH": type_defs.IPC_PATHS.PINCE_IPC_PATH})
+    gdb_process.setecho(False)
+    gdb_process.delaybeforesend = 0
+    gdb_process.timeout = None
+    gdb_process.expect_exact("(gdb)", timeout=10)
     status_thread = Thread(target=state_observe_thread)
     status_thread.daemon = True
     status_thread.start()
@@ -516,10 +527,11 @@ def set_logging(state):
     Args:
         state (bool): Sets logging on if True, off if False
     """
-    send_command("set logging off")
     send_command("set logging file " + SysUtils.get_logging_file(currentpid))
     if state:
         send_command("set logging on")
+    else:
+        send_command("set logging off")
 
 
 #:tag:GDBCommunication
@@ -669,12 +681,12 @@ def detach():
     global currentpid
     old_pid = currentpid
     if gdb_initialized:
-        global child
+        global gdb_process
         global inferior_status
         currentpid = -1
         inferior_status = -1
         gdb_initialized = False
-        child.close()
+        gdb_process.close()
     if old_pid != -1:
         SysUtils.delete_PINCE_IPC_PATH(old_pid)
     print("Detached from the process with PID:" + str(old_pid))
@@ -727,7 +739,7 @@ def inject_with_advanced_injection(library_path):
 
 
 #:tag:Injection
-def inject_with_dlopen_call(library_path):
+def inject_with_dlopen_call(library_path: str):
     """Injects the given .so file to current process
     This is a variant of the function inject_with_advanced_injection
     This function won't break the target process unlike other complex injection methods
@@ -739,11 +751,11 @@ def inject_with_dlopen_call(library_path):
     Returns:
         bool: Result of the injection
     """
-    injectionpath = '"' + library_path + '"'
+    injectionpath: str = '"' + library_path + '"'
     result = call_function_from_inferior("dlopen(" + injectionpath + ", 1)")[1]
-    if result is "0" or not result:
+    if result == "0" or not result:
         new_result = call_function_from_inferior("__libc_dlopen_mode(" + injectionpath + ", 1)")[1]
-        if new_result is "0" or not new_result:
+        if new_result == "0" or not new_result:
             return False
         return True
     return True
@@ -787,14 +799,14 @@ def read_memory(address, value_index, length=None, zero_terminate=True, only_byt
     """
     try:
         value_index = int(value_index)
-    except:
-        print(str(value_index) + " is not a valid value index")
+    except ValueError:
+        logging.exception("{} is not a valid value index".format(value_index))
         return
     if not type(address) == int:
         try:
             address = int(address, 0)
-        except:
-            print(str(address) + " is not a valid address")
+        except ValueError:
+            logging.exception("{:08} isn't a valid address".format(address))
             return
     packed_data = type_defs.index_to_valuetype_dict.get(value_index, -1)
     if type_defs.VALUE_INDEX.is_string(value_index):
@@ -810,8 +822,8 @@ def read_memory(address, value_index, length=None, zero_terminate=True, only_byt
     elif value_index is type_defs.VALUE_INDEX.INDEX_AOB:
         try:
             expected_length = int(length)
-        except:
-            print(str(length) + " is not a valid length")
+        except ValueError:
+            logging.exception("{} is not a valid length".format(length))
             return
         if not expected_length > 0:
             print("length must be greater than 0")
@@ -868,26 +880,24 @@ def read_memory_multiple(nested_list):
         [returned_value1,returned_value2,None,returned_value4]
     """
     data_read_list = []
-    mem_handle = open(mem_file, "rb")
-
-    for item in nested_list:
-        address = item[0]
-        index = item[1]
-        try:
-            length = item[2]
-        except IndexError:
-            length = 0
-        try:
-            zero_terminate = item[3]
-        except IndexError:
-            zero_terminate = True
-        try:
-            only_bytes = item[4]
-        except IndexError:
-            only_bytes = False
-        data_read = read_memory(address, index, length, zero_terminate, only_bytes, mem_handle)
-        data_read_list.append(data_read)
-    mem_handle.close()
+    with open(mem_file, "rb") as mem_handle:
+        for item in nested_list:
+            address = item[0]
+            index = item[1]
+            try:
+                length = item[2]
+            except IndexError:
+                length = 0
+            try:
+                zero_terminate = item[3]
+            except IndexError:
+                zero_terminate = True
+            try:
+                only_bytes = item[4]
+            except IndexError:
+                only_bytes = False
+            data_read = read_memory(address, index, length, zero_terminate, only_bytes, mem_handle)
+            data_read_list.append(data_read)
     return data_read_list
 
 
@@ -926,11 +936,10 @@ def write_memory(address, value_index, value):
             write_data = struct.pack(data_type, write_data)
     else:
         write_data = write_data.encode(encoding, option)
-    FILE = open(mem_file, "rb+")
     try:
-        FILE.seek(address)
-        FILE.write(write_data)
-        FILE.close()
+        with open(mem_file, "rb+") as FILE:
+            FILE.seek(address)
+            FILE.write(write_data)
     except (OSError, ValueError):
         print("Can't access the memory at address " + hex(address) + " or offset " + hex(address + len(write_data)))
 
@@ -1660,7 +1669,8 @@ def get_track_watchpoint_info(watchpoint_list):
     """
     track_watchpoint_file = SysUtils.get_track_watchpoint_file(currentpid, watchpoint_list)
     try:
-        output = pickle.load(open(track_watchpoint_file, "rb"))
+        with open(track_watchpoint_file, "rb") as f:
+            output = pickle.load(f)
     except:
         output = ""
     return output
@@ -1708,7 +1718,8 @@ def get_track_breakpoint_info(breakpoint):
     """
     track_breakpoint_file = SysUtils.get_track_breakpoint_file(currentpid, breakpoint)
     try:
-        output = pickle.load(open(track_breakpoint_file, "rb"))
+        with open(track_breakpoint_file, "rb") as bp_file:
+            output = pickle.load(bp_file)
     except:
         output = ""
     return output
@@ -1752,7 +1763,8 @@ def trace_instructions(expression, max_trace_count=1000, trigger_condition="", s
     modify_breakpoint(expression, type_defs.BREAKPOINT_MODIFY.CONDITION, condition=trigger_condition)
     contents_send = (type_defs.TRACE_STATUS.STATUS_IDLE, "Waiting for breakpoint to trigger")
     trace_status_file = SysUtils.get_trace_instructions_status_file(currentpid, breakpoint)
-    pickle.dump(contents_send, open(trace_status_file, "wb"))
+    with open(trace_status_file, "wb") as trace_file:
+        pickle.dump(contents_send, trace_file)
     param_str = (
         breakpoint, max_trace_count, stop_condition, step_mode, stop_after_trace, collect_general_registers,
         collect_flag_registers, collect_segment_registers, collect_float_registers)
@@ -1782,7 +1794,8 @@ def get_trace_instructions_info(breakpoint):
     """
     trace_instructions_file = SysUtils.get_trace_instructions_file(currentpid, breakpoint)
     try:
-        output = json.load(open(trace_instructions_file, "r"), object_pairs_hook=OrderedDict)
+        with open(trace_instructions_file, "r") as trace_file:
+            output = json.load(trace_file, object_pairs_hook=OrderedDict)
     except:
         output = []
     return output
@@ -1805,7 +1818,8 @@ def get_trace_instructions_status(breakpoint):
     """
     trace_status_file = SysUtils.get_trace_instructions_status_file(currentpid, breakpoint)
     try:
-        output = pickle.load(open(trace_status_file, "rb"))
+        with open(trace_status_file, "rb") as trace_file:
+            output = pickle.load(trace_file)
     except:
         output = False, ""
     return output
@@ -1820,7 +1834,8 @@ def cancel_trace_instructions(breakpoint):
     """
     status_info = (type_defs.TRACE_STATUS.STATUS_CANCELED, "Tracing has been canceled")
     trace_status_file = SysUtils.get_trace_instructions_status_file(currentpid, breakpoint)
-    pickle.dump(status_info, open(trace_status_file, "wb"))
+    with open(trace_status_file, "wb") as trace_file:
+        pickle.dump(status_info, trace_file)
 
 
 #:tag:Tools

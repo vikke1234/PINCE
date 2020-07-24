@@ -28,8 +28,6 @@ from libPINCE import SysUtils, type_defs, common_regexes
 
 inferior = gdb.selected_inferior()
 pid = inferior.pid
-recv_file = SysUtils.get_IPC_from_PINCE_file(pid)
-send_file = SysUtils.get_IPC_to_PINCE_file(pid)
 
 lib = None
 
@@ -46,11 +44,15 @@ track_breakpoint_dict = {}
 
 
 def receive_from_pince():
-    return pickle.load(open(recv_file, "rb"))
+    recv_file = SysUtils.get_IPC_from_PINCE_file(pid)
+    with open(recv_file, "rb") as f:
+        return pickle.load(f)
 
 
 def send_to_pince(contents_send):
-    pickle.dump(contents_send, open(send_file, "wb"))
+    send_file = SysUtils.get_IPC_to_PINCE_file(pid)
+    with open(send_file, "wb") as f:
+        pickle.dump(contents_send, f)
 
 
 ScriptUtils.gdbinit()
@@ -558,6 +560,9 @@ class DissectCode(gdb.Command):
                                     ref_str_count += 1
                 start_addr = last_disas_addr
         self.memory.close()
+        referenced_calls_dict.close()
+        referenced_jumps_dict.close()
+        referenced_strings_dict.close()
 
 
 class SearchReferencedCalls(gdb.Command):
@@ -575,24 +580,23 @@ class SearchReferencedCalls(gdb.Command):
             except Exception as e:
                 print("An exception occurred while trying to compile the given regex\n", str(e))
                 return
-        str_dict = shelve.open(SysUtils.get_referenced_calls_file(pid), "r")
-        returned_list = []
-        for index, item in enumerate(str_dict):
-            symbol = ScriptUtils.examine_expression(item).all
-            if not symbol:
-                continue
-            if enable_regex:
-                if not regex.search(symbol):
+        with shelve.open(SysUtils.get_referenced_calls_file(pid), "r") as str_dict:
+            returned_list = []
+            for index, item in enumerate(str_dict):
+                symbol = ScriptUtils.examine_expression(item).all
+                if not symbol:
                     continue
-            else:
-                if case_sensitive:
-                    if symbol.find(searched_str) == -1:
+                if enable_regex:
+                    if not regex.search(symbol):
                         continue
                 else:
-                    if symbol.lower().find(searched_str.lower()) == -1:
-                        continue
-            returned_list.append((symbol, len(str_dict[item])))
-        str_dict.close()
+                    if case_sensitive:
+                        if symbol.find(searched_str) == -1:
+                            continue
+                    else:
+                        if symbol.lower().find(searched_str.lower()) == -1:
+                            continue
+                returned_list.append((symbol, len(str_dict[item])))
         send_to_pince(returned_list)
 
 

@@ -44,7 +44,7 @@ class QHexModel(QAbstractTableModel):
                 return QVariant(QColor(Qt.red))
         elif int_role != Qt.DisplayRole:
             return QVariant()
-        if self.data_array is None:
+        if self.data_array is None or len(self.data_array) == 0:
             return QVariant()
         return QVariant(self.data_array[QModelIndex.row() * self.column_count + QModelIndex.column()])
 
