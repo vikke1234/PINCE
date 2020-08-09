@@ -38,16 +38,17 @@ from PyQt5.QtGui import QIcon, QMovie, QPixmap, QCursor, QKeySequence, QColor, Q
     QKeyEvent, QRegExpValidator
 from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessageBox, QDialog, QWidget, \
     QShortcut, QKeySequenceEdit, QTabWidget, QMenu, QFileDialog, QAbstractItemView, QTreeWidgetItem, \
-    QTreeWidgetItemIterator, QLabel, QLineEdit, QComboBox, QDialogButtonBox
+    QTreeWidgetItemIterator, QDialogButtonBox
 
 import application.Settings
 from application import Hotkeys
 from application.GUI.Forms.AboutWidgetForm import AboutWidgetForm
+from application.GUI.Forms.BookmarkWidgetForm import BookmarkWidgetForm
 from application.GUI.Forms.ConsoleWidgetForm import ConsoleWidgetForm
+from application.GUI.Forms.InputDialogForm import InputDialogForm
 from application.instance_storage import instances
 from application.CheckInferiorStatus import CheckInferiorStatus
 from application.GUI.AddAddressManuallyDialog import Ui_Dialog as ManualAddressDialog
-from application.GUI.BookmarkWidget import Ui_Form as BookmarkWidget
 from application.GUI.BreakpointInfoWidget import Ui_TabWidget as BreakpointInfoWidget
 from application.GUI.CustomAbstractTableModels.AsciiModel import QAsciiModel
 from application.GUI.CustomAbstractTableModels.HexModel import QHexModel
@@ -58,7 +59,6 @@ from application.GUI.FloatRegisterWidget import Ui_TabWidget as FloatRegisterWid
 from application.GUI.Forms.DissectCodeDialogForm import DissectCodeDialogForm
 from application.GUI.FunctionsInfoWidget import Ui_Form as FunctionsInfoWidget
 from application.GUI.HexEditDialog import Ui_Dialog as HexEditDialog
-from application.GUI.InputDialog import Ui_Dialog as InputDialog
 from application.GUI.LibPINCEReferenceWidget import Ui_Form as LibPINCEReferenceWidget
 from application.GUI.LoadingDialog import Ui_Dialog as LoadingDialog
 from application.GUI.LogFileWidget import Ui_Form as LogFileWidget
@@ -1289,80 +1289,6 @@ class LoadingDialogForm(QDialog, LoadingDialog):
         def overrided_func(self):
             print("Override this function")
             return 0
-
-
-class InputDialogForm(QDialog, InputDialog):
-    # Format of item_list->[(label_str, item_data, label_alignment), ...]
-    # If label_str is None, no label will be created
-    # If item_data is None, no input field will be created. If it's str, a QLineEdit containing the str will be created
-    # If it's a list, a QComboBox with the items in the list will be created, last item of the list should be an integer
-    # that points the current index of the QComboBox, for instance: ["0", "1", 1] will create a QCombobox with the items
-    # "0" and "1" then will set current index to 1 (which is the item "1")
-    # label_alignment is optional
-    def __init__(self, parent=None, item_list=None, parsed_index=-1, value_index=type_defs.VALUE_INDEX.INDEX_4BYTES,
-                 buttons=(QDialogButtonBox.Ok, QDialogButtonBox.Cancel)):
-        super().__init__(parent=parent)
-        self.setupUi(self)
-        for button in buttons:
-            self.buttonBox.addButton(button)
-        self.object_list = []
-        for item in item_list:
-            if item[0] is not None:
-                label = QLabel(self)
-                try:
-                    label.setAlignment(item[2])
-                except IndexError:
-                    label.setAlignment(Qt.AlignCenter)
-                label.setText(item[0])
-                label.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.TextSelectableByMouse)
-                self.verticalLayout.addWidget(label)
-            try:
-                item_data = item[1]
-            except IndexError:
-                pass
-            else:
-                if item_data is not None:
-                    if type(item_data) is str:
-                        lineedit = QLineEdit(self)
-                        lineedit.setText(item_data)
-                        self.verticalLayout.addWidget(lineedit)
-                        self.object_list.append(lineedit)
-                    elif type(item_data) is list:
-                        combobox = QComboBox(self)
-                        current_index = item_data.pop()
-                        combobox.addItems(item_data)
-                        combobox.setCurrentIndex(current_index)
-                        self.verticalLayout.addWidget(combobox)
-                        self.object_list.append(combobox)
-        self.adjustSize()
-        self.verticalLayout.removeWidget(self.buttonBox)  # Pushing buttonBox to the end
-        self.verticalLayout.addWidget(self.buttonBox)
-        for widget in GuiUtils.get_layout_widgets(self.verticalLayout):
-            if isinstance(widget, QLabel):
-                continue
-            widget.setFocus()  # Focus to the first input field
-            break
-        self.parsed_index = parsed_index
-        self.value_index = value_index
-
-    def get_text(self, item):
-        try:
-            string = item.text()
-        except AttributeError:
-            string = item.currentText()
-        return string
-
-    def get_values(self):
-        return self.get_text(self.object_list[0]) if len(self.object_list) == 1 else [self.get_text(item) for item in
-                                                                                      self.object_list]
-
-    def accept(self):
-        if self.parsed_index != -1:
-            item = self.object_list[self.parsed_index]
-            if SysUtils.parse_string(self.get_text(item), self.value_index) is None:
-                QMessageBox.information(self, "Error", "Can't parse the input")
-                return
-        super(InputDialogForm, self).accept()
 
 
 class SettingsDialogForm(QDialog, SettingsDialog):
@@ -2742,97 +2668,6 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
         self.float_registers_widget = FloatRegisterWidgetForm()
         self.float_registers_widget.show()
         GuiUtils.center_to_window(self.float_registers_widget, self.widget_Registers)
-
-
-class BookmarkWidgetForm(QWidget, BookmarkWidget):
-    def __init__(self, parent=None):
-        super().__init__()
-        self.setupUi(self)
-        self.parent = lambda: parent
-
-        instances.append(self)
-        GuiUtils.center(self)
-        self.setWindowFlags(Qt.Window)
-        self.listWidget.contextMenuEvent = self.listWidget_context_menu_event
-        self.listWidget.currentRowChanged.connect(self.change_display)
-        self.listWidget.itemDoubleClicked.connect(self.listWidget_item_double_clicked)
-        self.shortcut_delete = QShortcut(QKeySequence("Del"), self)
-        self.shortcut_delete.activated.connect(self.delete_record)
-        self.shortcut_refresh = QShortcut(QKeySequence("R"), self)
-        self.shortcut_refresh.activated.connect(self.refresh_table)
-        self.refresh_table()
-
-    def refresh_table(self):
-        self.listWidget.clear()
-        address_list = [hex(address) for address in self.parent().tableWidget_Disassemble.bookmarks.keys()]
-        self.listWidget.addItems([item.all for item in GDB_Engine.examine_expressions(address_list)])
-
-    def change_display(self, row):
-        current_address = SysUtils.extract_address(self.listWidget.item(row).text())
-        self.lineEdit_Info.setText(GDB_Engine.get_address_info(current_address))
-        self.lineEdit_Comment.setText(self.parent().tableWidget_Disassemble.bookmarks[int(current_address, 16)])
-
-    def listWidget_item_double_clicked(self, item):
-        self.parent().disassemble_expression(SysUtils.extract_address(item.text()), append_to_travel_history=True)
-
-    def exec_add_entry_dialog(self):
-        entry_dialog = InputDialogForm(item_list=[("Enter the expression", "")])
-        if entry_dialog.exec_():
-            text = entry_dialog.get_values()
-            address = GDB_Engine.examine_expression(text).address
-            if not address:
-                QMessageBox.information(self, "Error", "Invalid expression or address")
-                return
-            self.parent().bookmark_address(int(address, 16))
-            self.refresh_table()
-
-    def exec_change_comment_dialog(self, current_address):
-        self.parent().change_bookmark_comment(current_address)
-        self.refresh_table()
-
-    def listWidget_context_menu_event(self, event):
-        current_item = GuiUtils.get_current_item(self.listWidget)
-        if current_item:
-            current_address = int(SysUtils.extract_address(current_item.text()), 16)
-            if current_address not in self.parent().tableWidget_Disassemble.bookmarks:
-                QMessageBox.information(self, "Error", "Invalid entries detected, refreshing the page")
-                self.refresh_table()
-                return
-        else:
-            current_address = None
-        menu = QMenu()
-        add_entry = menu.addAction("Add new entry")
-        change_comment = menu.addAction("Change comment of this record")
-        delete_record = menu.addAction("Delete this record[Del]")
-        if current_item is None:
-            GuiUtils.delete_menu_entries(menu, [change_comment, delete_record])
-        menu.addSeparator()
-        refresh = menu.addAction("Refresh[R]")
-        font_size = self.listWidget.font().pointSize()
-        menu.setStyleSheet("font-size: " + str(font_size) + "pt;")
-        action = menu.exec_(event.globalPos())
-        actions = {
-            add_entry: self.exec_add_entry_dialog,
-            change_comment: lambda: self.exec_change_comment_dialog(current_address),
-            delete_record: self.delete_record,
-            refresh: self.refresh_table
-        }
-        try:
-            actions[action]()
-        except KeyError:
-            pass
-
-    def delete_record(self):
-        current_item = GuiUtils.get_current_item(self.listWidget)
-        if not current_item:
-            return
-        current_address = int(SysUtils.extract_address(current_item.text()), 16)
-        self.parent().delete_bookmark(current_address)
-        self.refresh_table()
-
-    def closeEvent(self, QCloseEvent):
-
-        instances.remove(self)
 
 
 class FloatRegisterWidgetForm(QTabWidget, FloatRegisterWidget):

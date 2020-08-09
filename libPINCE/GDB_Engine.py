@@ -26,6 +26,7 @@ import struct
 from collections import OrderedDict, defaultdict
 from threading import Lock, Thread, Condition
 from time import sleep, time
+from typing import Dict
 
 import pexpect
 
@@ -37,33 +38,33 @@ libc = ctypes.CDLL('libc.so.6')
 #:tag:GDBInformation
 #:doc:
 # A boolean value. True if gdb is initialized, False if not
-gdb_initialized = False
+gdb_initialized: bool = False
 
 #:tag:InferiorInformation
 #:doc:
 # An integer. Can be a member of type_defs.INFERIOR_ARCH
-inferior_arch = int
+inferior_arch: int
 
 #:tag:InferiorInformation
 #:doc:
 # An integer. Can be a member of type_defs.INFERIOR_STATUS
-inferior_status = -1
+inferior_status: int = -1
 
 #:tag:InferiorInformation
 #:doc:
 # An integer. PID of the current attached/created process
-currentpid = -1
+currentpid: int = -1
 
 #:tag:GDBInformation
 #:doc:
 # An integer. Can be a member of type_defs.STOP_REASON
-stop_reason = int
+stop_reason: int
 
 #:tag:GDBInformation
 #:doc:
 # A dictionary. Holds breakpoint addresses and what to do on hit
 # Format: {address1:on_hit1, address2:on_hit2, ...}
-breakpoint_on_hit_dict = {}
+breakpoint_on_hit_dict: Dict = {}
 
 #:tag:GDBInformation
 #:doc:
@@ -96,7 +97,7 @@ process_exited_condition = Condition()
 #:doc:
 # Bool for telling CheckInferiorStatus if it's a "real" pause or just for a split 
 # second that it will continue very soon, used in execute_with_temporary_interruption
-temporary_execution_bool = False
+temporary_execution_bool: bool = False
 
 #:tag:ConditionsLocks
 #:doc:
@@ -107,7 +108,7 @@ gdb_waiting_for_prompt_condition = Condition()
 #:tag:GDBInformation
 #:doc:
 # A string. Stores the output of the last command
-gdb_output = ""
+gdb_output: str = ""
 
 #:tag:GDBInformation
 #:doc:
@@ -136,7 +137,7 @@ gdb_output_mode = type_defs.gdb_output_mode(True, True, True)
 #:tag:InferiorInformation
 #:doc:
 # A string. memory file of the currently attached/created process
-mem_file = "/proc/" + str(currentpid) + "/mem"
+mem_file: str = "/proc/{}/mem".format(currentpid)
 
 '''
 When PINCE was first launched, it used gdb 7.7.1, which is a very outdated version of gdb

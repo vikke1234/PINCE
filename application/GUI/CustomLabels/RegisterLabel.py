@@ -19,7 +19,7 @@ from PyQt5.QtGui import QCursor
 from PyQt5.QtCore import Qt
 from libPINCE import GDB_Engine
 from libPINCE import GuiUtils
-from PINCE import InputDialogForm
+from application.GUI.Forms.InputDialogForm import InputDialogForm
 
 
 class QRegisterLabel(QLabel):
