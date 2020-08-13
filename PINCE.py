@@ -52,6 +52,7 @@ from application.GUI.Forms.LoadingDialogForm import LoadingDialogForm
 from application.GUI.Forms.ManualAddressDialogForm import ManualAddressDialogForm
 from application.GUI.Forms.ProcessForm import ProcessForm
 from application.GUI.Forms.SettingsDialogForm import SettingsDialogForm
+from application.GUI.Forms.StackTraceInfoWidgetForm import StackTraceInfoWidgetForm
 from application.instance_storage import instances
 from application.CheckInferiorStatus import CheckInferiorStatus
 from application.GUI.BreakpointInfoWidget import Ui_TabWidget as BreakpointInfoWidget
@@ -71,7 +72,6 @@ from application.GUI.MemoryViewerWindow import Ui_MainWindow_MemoryView as Memor
 from application.GUI.ReferencedCallsWidget import Ui_Form as ReferencedCallsWidget
 from application.GUI.ReferencedStringsWidget import Ui_Form as ReferencedStringsWidget
 from application.GUI.SearchOpcodeWidget import Ui_Form as SearchOpcodeWidget
-from application.GUI.StackTraceInfoWidget import Ui_Form as StackTraceInfoWidget
 from application.GUI.TraceInstructionsPromptDialog import Ui_Dialog as TraceInstructionsPromptDialog
 from application.GUI.TraceInstructionsWaitWidget import Ui_Form as TraceInstructionsWaitWidget
 from application.GUI.TraceInstructionsWindow import Ui_MainWindow as TraceInstructionsWindow
@@ -311,7 +311,7 @@ class MainForm(QMainWindow, MainWindow):
     # Check if any process should be attached to automatically
     # Patterns at former positions have higher priority if regex is off
     def auto_attach(self):
-        logging.info("auto attach list: {}".format(auto_attach_list))
+        print("auto attach list: {}".format(auto_attach_list))
         if not auto_attach_list:
             return
         if auto_attach_regex:
@@ -2164,25 +2164,6 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
         self.float_registers_widget = FloatRegisterWidgetForm()
         self.float_registers_widget.show()
         GuiUtils.center_to_window(self.float_registers_widget, self.widget_Registers)
-
-
-class StackTraceInfoWidgetForm(QWidget, StackTraceInfoWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.setupUi(self)
-        GuiUtils.center(self)
-        self.setWindowFlags(Qt.Window)
-        self.listWidget_ReturnAddresses.currentRowChanged.connect(self.update_frame_info)
-        self.update_stacktrace()
-
-    def update_stacktrace(self):
-        self.listWidget_ReturnAddresses.clear()
-        return_addresses = GDB_Engine.get_stack_frame_return_addresses()
-        self.listWidget_ReturnAddresses.addItems(return_addresses)
-
-    def update_frame_info(self, index):
-        frame_info = GDB_Engine.get_stack_frame_info(index)
-        self.textBrowser_Info.setText(frame_info)
 
 
 class BreakpointInfoWidgetForm(QTabWidget, BreakpointInfoWidget):

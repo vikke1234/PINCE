@@ -22,22 +22,6 @@ from libPINCE import type_defs
 
 # represents the index of columns in address table
 
-# roles used to store hidden information inside address table
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # settings
 current_settings_version = "master-17"  # Increase version by one if you change settings. Format: branch_name-version
 update_table: bool = True
