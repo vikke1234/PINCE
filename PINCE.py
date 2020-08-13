@@ -32,7 +32,7 @@ import getopt
 from time import sleep, time
 from typing import List
 import psutil
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QByteArray, QSettings, QEvent, \
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QByteArray, QSettings, QEvent, \
     QItemSelectionModel, QTimer, QModelIndex, QRegExp
 from PyQt5.QtGui import QIcon, QMovie, QPixmap, QKeySequence, QColor, QTextCharFormat, QBrush, QTextCursor, \
     QRegExpValidator
@@ -47,6 +47,7 @@ from application.GUI.Forms.BookmarkWidgetForm import BookmarkWidgetForm
 from application.GUI.Forms.ConsoleWidgetForm import ConsoleWidgetForm
 from application.GUI.Forms.EditTypeDialogForm import EditTypeDialogForm
 from application.GUI.Forms.InputDialogForm import InputDialogForm
+from application.GUI.Forms.LoadingDialogForm import LoadingDialogForm
 from application.GUI.Forms.ManualAddressDialogForm import ManualAddressDialogForm
 from application.GUI.Forms.ProcessForm import ProcessForm
 from application.instance_storage import instances
@@ -61,7 +62,6 @@ from application.GUI.Forms.DissectCodeDialogForm import DissectCodeDialogForm
 from application.GUI.FunctionsInfoWidget import Ui_Form as FunctionsInfoWidget
 from application.GUI.HexEditDialog import Ui_Dialog as HexEditDialog
 from application.GUI.LibPINCEReferenceWidget import Ui_Form as LibPINCEReferenceWidget
-from application.GUI.LoadingDialog import Ui_Dialog as LoadingDialog
 from application.GUI.LogFileWidget import Ui_Form as LogFileWidget
 from application.GUI.MainWindow import Ui_MainWindow as MainWindow
 from application.GUI.MemoryRegionsWidget import Ui_Form as MemoryRegionsWidget
@@ -965,55 +965,6 @@ class MainForm(QMainWindow, MainWindow):
                ([self.read_address_table_recursively(row.child(i)) for i in range(row.childCount())],)
 
 
-class LoadingDialogForm(QDialog, LoadingDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.setupUi(self)
-        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        if parent:
-            GuiUtils.center_to_parent(self)
-        self.keyPressEvent = QEvent.ignore
-
-        # Make use of this background_thread when you spawn a LoadingDialogForm
-        # Warning: overrided_func() can only return one value, so if your overridden function returns more than one
-        # value, refactor your overriden function to return only one object(convert tuple to list etc.)
-        # Check refresh_table method of FunctionsInfoWidgetForm for exemplary usage
-        self.background_thread = self.BackgroundThread()
-        self.background_thread.output_ready.connect(self.accept)
-        self.pushButton_Cancel.clicked.connect(self.cancel_thread)
-        media_directory = SysUtils.get_media_directory()
-        self.movie = QMovie(media_directory + "/LoadingDialog/ajax-loader.gif", QByteArray())
-        self.label_Animated.setMovie(self.movie)
-        self.movie.setScaledSize(QSize(25, 25))
-        self.movie.setCacheMode(QMovie.CacheAll)
-        self.movie.setSpeed(100)
-        self.movie.start()
-
-    # This function only cancels the last command sent
-    # Override this if you want to do dangerous stuff like, God forbid, background_thread.terminate()
-    def cancel_thread(self):
-        GDB_Engine.cancel_last_command()
-
-    def exec_(self):
-        self.background_thread.start()
-        super(LoadingDialogForm, self).exec_()
-
-    class BackgroundThread(QThread):
-        output_ready = pyqtSignal(object)
-
-        def __init__(self):
-            super().__init__()
-
-        def run(self):
-            output = self.overrided_func()
-            self.output_ready.emit(output)
-
-        def overrided_func(self):
-            print("Override this function")
-            return 0
-
-
 class SettingsDialogForm(QDialog, SettingsDialog):
     def __init__(self, set_default_settings_func, parent=None):
         super().__init__(parent=parent)
@@ -1618,7 +1569,7 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
 
     # offset can also be an address as hex str
     # returns True if the given expression is disassembled correctly, False if not
-    def disassemble_expression(self, expression, offset="+200", append_to_travel_history=False):
+    def disassemble_expression(self, expression, offset="+200", append_to_travel_history:bool = False) -> None:
         disas_data = GDB_Engine.disassemble(expression, offset)
         if not disas_data:
             QMessageBox.information(app.focusWidget(), "Error", "Cannot access memory at expression " + expression)
@@ -1743,11 +1694,11 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
         self.disassemble_currently_displayed_address = current_first_address
         return True
 
-    def refresh_disassemble_view(self):
+    def refresh_disassemble_view(self) -> None:
         self.disassemble_expression(self.disassemble_currently_displayed_address)
 
     # Set colour of a row if a specific address is encountered(e.g $pc, a bookmarked address etc.)
-    def handle_colours(self, row_colour):
+    def handle_colours(self, row_colour) -> None:
         for row in row_colour:
             current_row = row_colour[row]
             if PC_COLOUR in current_row:
@@ -1773,11 +1724,11 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
                 self.set_row_colour(row, REF_COLOUR)
 
     # color parameter should be Qt.colour
-    def set_row_colour(self, row, colour):
+    def set_row_colour(self, row, colour) -> None:
         for col in range(self.tableWidget_Disassemble.columnCount()):
             self.tableWidget_Disassemble.item(row, col).setData(Qt.BackgroundColorRole, QColor(colour))
 
-    def on_process_stop(self):
+    def on_process_stop(self) -> None:
         if GDB_Engine.stop_reason == type_defs.STOP_REASON.PAUSE:
             self.setWindowTitle("Memory Viewer - Paused")
             return
@@ -1814,10 +1765,10 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
         print("UPDATED MEMORYVIEW IN:" + str(time1 - time0))
         self.updating_memoryview = False
 
-    def on_process_running(self):
+    def on_process_running(self) -> None:
         self.setWindowTitle("Memory Viewer - Running")
 
-    def add_breakpoint_condition(self, int_address):
+    def add_breakpoint_condition(self, int_address: int):
         condition_text = "Enter the expression for condition, for instance:\n\n" + \
                          "$eax==0x523\n" + \
                          "$rax>0 && ($rbp<0 || $rsp==0)\n" + \
@@ -1835,7 +1786,7 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
                 QMessageBox.information(app.focusWidget(), "Error", "Failed to set condition for address " +
                                         hex(int_address) + "\nCheck terminal for details")
 
-    def update_registers(self):
+    def update_registers(self) -> None:
         registers = GDB_Engine.read_registers()
         if GDB_Engine.inferior_arch == type_defs.INFERIOR_ARCH.ARCH_64:
             self.stackedWidget.setCurrentWidget(self.registers_64)
