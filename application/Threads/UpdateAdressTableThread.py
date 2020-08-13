@@ -25,8 +25,9 @@ from application.constants import ADDR_COL, TYPE_COL, ADDR_EXPR_ROLE
 from libPINCE import GuiUtils, GDB_Engine
 from application.Settings import table_update_interval
 
+
 class UpdateAddressTableThread(QThread):
-    value_changed = pyqtSignal()
+    value_changed = pyqtSignal(list)
 
     def __init__(self, treeWidget_AddressTable: QTreeWidget):
         super().__init__()
@@ -68,10 +69,9 @@ class UpdateAddressTableThread(QThread):
         return rows, table_content, new_table_content
 
     def run(self):
-        # maybe just pass the list to the signal?
-        global saved_addresses_changed_list
+        saved_addresses_changed_list = []
         while True:
-            sleep(table_update_interval)  # this can probably be set from settings?
+            sleep(table_update_interval)
             ret = self.fetch_new_table_content()
             if ret is None:
                 continue
@@ -83,4 +83,4 @@ class UpdateAddressTableThread(QThread):
                     saved_addresses_changed_list.append((row, new_val))
                     changed_bool = True
             if changed_bool:
-                self.value_changed.emit()
+                self.value_changed.emit(saved_addresses_changed_list)

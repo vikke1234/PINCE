@@ -45,6 +45,7 @@ from application import Hotkeys
 from application.GUI.Forms.AboutWidgetForm import AboutWidgetForm
 from application.GUI.Forms.BookmarkWidgetForm import BookmarkWidgetForm
 from application.GUI.Forms.ConsoleWidgetForm import ConsoleWidgetForm
+from application.GUI.Forms.EditTypeDialogForm import EditTypeDialogForm
 from application.GUI.Forms.InputDialogForm import InputDialogForm
 from application.GUI.Forms.ManualAddressDialogForm import ManualAddressDialogForm
 from application.GUI.Forms.ProcessForm import ProcessForm
@@ -54,7 +55,6 @@ from application.GUI.BreakpointInfoWidget import Ui_TabWidget as BreakpointInfoW
 from application.GUI.CustomAbstractTableModels.AsciiModel import QAsciiModel
 from application.GUI.CustomAbstractTableModels.HexModel import QHexModel
 from application.GUI.CustomValidators.HexValidator import QHexValidator
-from application.GUI.EditTypeDialog import Ui_Dialog as EditTypeDialog
 from application.GUI.ExamineReferrersWidget import Ui_Form as ExamineReferrersWidget
 from application.GUI.FloatRegisterWidget import Ui_TabWidget as FloatRegisterWidget
 from application.GUI.Forms.DissectCodeDialogForm import DissectCodeDialogForm
@@ -131,9 +131,6 @@ signal.signal(signal.SIGINT, signal_handler)
 # Checks if the inferior has been terminated
 
 
-# TODO undo scan, we would probably need to make some data structure we
-# could pass to scanmem which then would set the current matches
-# the mainwindow
 class MainForm(QMainWindow, MainWindow):
     def __init__(self):
         super().__init__()
@@ -571,8 +568,7 @@ class MainForm(QMainWindow, MainWindow):
         except KeyError:
             self.treeWidget_AddressTable.keyPressEvent_original(event)
 
-    def update_address_table_automatically(self):
-        global saved_addresses_changed_list
+    def update_address_table_automatically(self, saved_addresses_changed_list):
         for row, value in saved_addresses_changed_list:
             row.setText(VALUE_COL, str(value))
 
@@ -816,10 +812,6 @@ class MainForm(QMainWindow, MainWindow):
         self.label_SelectedProcess.setText(str(p.pid) + " - " + p.name())
 
         # enable scan GUI
-        self.lineEdit_Scan.setPlaceholderText("Scan for")
-        # self.QWidget_Toolbox.setEnabled(True)
-        # self.pushButton_NextScan.setEnabled(False)
-        # self.pushButton_UndoScan.setEnabled(False)
 
     def delete_address_table_contents(self):
         confirm_dialog = InputDialogForm(item_list=[("This will clear the contents of address table\nProceed?",)])
@@ -971,81 +963,6 @@ class MainForm(QMainWindow, MainWindow):
     def read_address_table_recursively(self, row):
         return self.read_address_table_entries(row) + \
                ([self.read_address_table_recursively(row.child(i)) for i in range(row.childCount())],)
-
-
-class EditTypeDialogForm(QDialog, EditTypeDialog):
-    def __init__(self, parent=None, index=type_defs.VALUE_INDEX.INDEX_4BYTES, length=10, zero_terminate=True):
-        super().__init__(parent=parent)
-        self.setupUi(self)
-        self.setMaximumSize(100, 100)
-        self.lineEdit_Length.setValidator(QHexValidator(999, self))
-        GuiUtils.fill_value_combobox(self.comboBox_ValueType, index)
-        if type_defs.VALUE_INDEX.is_string(self.comboBox_ValueType.currentIndex()):
-            self.label_Length.show()
-            self.lineEdit_Length.show()
-            try:
-                length = str(length)
-            except:
-                length = "10"
-            self.lineEdit_Length.setText(length)
-            self.checkBox_ZeroTerminate.show()
-            self.checkBox_ZeroTerminate.setChecked(zero_terminate)
-        elif self.comboBox_ValueType.currentIndex() == type_defs.VALUE_INDEX.INDEX_AOB:
-            self.label_Length.show()
-            self.lineEdit_Length.show()
-            try:
-                length = str(length)
-            except:
-                length = "10"
-            self.lineEdit_Length.setText(length)
-            self.checkBox_ZeroTerminate.hide()
-        else:
-            self.label_Length.hide()
-            self.lineEdit_Length.hide()
-            self.checkBox_ZeroTerminate.hide()
-        self.comboBox_ValueType.currentIndexChanged.connect(self.comboBox_ValueType_current_index_changed)
-
-    def comboBox_ValueType_current_index_changed(self):
-        if type_defs.VALUE_INDEX.is_string(self.comboBox_ValueType.currentIndex()):
-            self.label_Length.show()
-            self.lineEdit_Length.show()
-            self.checkBox_ZeroTerminate.show()
-        elif self.comboBox_ValueType.currentIndex() == type_defs.VALUE_INDEX.INDEX_AOB:
-            self.label_Length.show()
-            self.lineEdit_Length.show()
-            self.checkBox_ZeroTerminate.hide()
-        else:
-            self.label_Length.hide()
-            self.lineEdit_Length.hide()
-            self.checkBox_ZeroTerminate.hide()
-
-    def reject(self):
-        super(EditTypeDialogForm, self).reject()
-
-    def accept(self):
-        if self.label_Length.isVisible():
-            length = self.lineEdit_Length.text()
-            try:
-                length = int(length, 0)
-            except:
-                QMessageBox.information(self, "Error", "Length is not valid")
-                return
-            if not length > 0:
-                QMessageBox.information(self, "Error", "Length must be greater than 0")
-                return
-        super(EditTypeDialogForm, self).accept()
-
-    def get_values(self):
-        length = self.lineEdit_Length.text()
-        try:
-            length = int(length, 0)
-        except:
-            length = 0
-        zero_terminate = False
-        if self.checkBox_ZeroTerminate.isChecked():
-            zero_terminate = True
-        address_type = self.comboBox_ValueType.currentIndex()
-        return address_type, length, zero_terminate
 
 
 class LoadingDialogForm(QDialog, LoadingDialog):
@@ -1879,10 +1796,7 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
         elif self.stackedWidget_StackScreens.currentWidget() == self.Stack:
             self.update_stack()
         self.refresh_hex_view()
-        if self.isVisible():
-            self.show()
-        else:
-            self.showMaximized()
+
         if bring_disassemble_to_front:
             self.activateWindow()
         try:
@@ -2181,8 +2095,11 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
         current_address_int: int = 0
 
         try:
-            logging.info("table widget item: {}".format(self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL)))
-            current_address_text = self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL).text()
+            disas_col = self.tableWidget_Disassemble.item(selected_row, DISAS_ADDR_COL)
+            logging.info("table widget item: {}".format(disas_col))
+            if disas_col is None:
+                logging.warning("could not fetch address")
+            current_address_text = disas_col.text()
             current_address = SysUtils.extract_address(current_address_text)
             current_address_int = int(current_address, 16)
         except AttributeError as e:
@@ -2227,8 +2144,10 @@ class MemoryViewWindowForm(QMainWindow, MemoryViewWindow):
     # Search the item in given row for location changing instructions
     # Go to the address pointed by that instruction if it contains any
     def follow_instruction(self, selected_row):
-        address = SysUtils.instruction_follow_address(
-            self.tableWidget_Disassemble.item(selected_row, DISAS_OPCODES_COL).text())
+        column = self.tableWidget_Disassemble.item(selected_row, DISAS_OPCODES_COL)
+        if column is None:
+            return
+        address = SysUtils.instruction_follow_address(column.text())
         if address:
             self.disassemble_expression(address, append_to_travel_history=True)
 

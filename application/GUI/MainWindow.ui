@@ -196,11 +196,11 @@
           <attribute name="verticalHeaderVisible">
            <bool>false</bool>
           </attribute>
-          <attribute name="verticalHeaderMinimumSectionSize">
-           <number>20</number>
-          </attribute>
           <attribute name="verticalHeaderDefaultSectionSize">
            <number>23</number>
+          </attribute>
+          <attribute name="verticalHeaderMinimumSectionSize">
+           <number>20</number>
           </attribute>
           <column>
            <property name="text">
@@ -316,7 +316,11 @@
             </widget>
            </item>
            <item>
-            <widget class="QLineEdit" name="lineEdit_Scan"/>
+            <widget class="QLineEdit" name="lineEdit_Scan">
+             <property name="placeholderText">
+              <string>Scan for</string>
+             </property>
+            </widget>
            </item>
           </layout>
          </item>
@@ -460,7 +464,7 @@
                  <string>Not currently supported</string>
                 </property>
                 <property name="text">
-                 <string>Rou&amp;nded (Extreme)</string>
+                 <string>Rounded (E&amp;xtreme)</string>
                 </property>
                </widget>
               </item>
