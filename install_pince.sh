@@ -73,7 +73,6 @@ PKG_NAMES_DEBIAN="$PKG_NAMES_ALL python3-pyqt5 autotools-dev libtool libreadline
 PKG_NAMES_SUSE="$PKG_NAMES_ALL python3-qt5"
 PKG_NAMES_ARCH="python-pyqt5 python-setuptools autoconf readline intltool" # arch defaults to py3 now days
 PKG_NAMES="$PKG_NAMES_DEBIAN"
-PKG_NAMES_PIP="psutil pexpect distorm3 pygdbmi"
 
 LSB_RELEASE="$(command -v lsb_release)"
 if [ -n "$LSB_RELEASE" ] ; then
@@ -92,7 +91,7 @@ case "$OS_NAME" in
 esac
 
 sudo ${PKG_MGR} ${INSTALL_COMMAND} ${PKG_NAMES}
-sudo pip3 install ${PKG_NAMES_PIP}
+sudo pip3 install -r requirements.txt
 
 if [ -e libPINCE/gdb_pince/gdb-8.3.1/bin/gdb ] ; then
     echo "GDB has been already compiled&installed, recompile&install? (y/n)"

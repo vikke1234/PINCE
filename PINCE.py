@@ -51,6 +51,7 @@ from application.GUI.Forms.InputDialogForm import InputDialogForm
 from application.GUI.Forms.LoadingDialogForm import LoadingDialogForm
 from application.GUI.Forms.ManualAddressDialogForm import ManualAddressDialogForm
 from application.GUI.Forms.ProcessForm import ProcessForm
+from application.GUI.Forms.ReferencedCallsWidgetForm import ReferencedCallsWidgetForm
 from application.GUI.Forms.SettingsDialogForm import SettingsDialogForm
 from application.GUI.Forms.StackTraceInfoWidgetForm import StackTraceInfoWidgetForm
 from application.instance_storage import instances
@@ -59,7 +60,6 @@ from application.GUI.BreakpointInfoWidget import Ui_TabWidget as BreakpointInfoW
 from application.GUI.CustomAbstractTableModels.AsciiModel import QAsciiModel
 from application.GUI.CustomAbstractTableModels.HexModel import QHexModel
 from application.GUI.CustomValidators.HexValidator import QHexValidator
-from application.GUI.ExamineReferrersWidget import Ui_Form as ExamineReferrersWidget
 from application.GUI.Forms.DissectCodeDialogForm import DissectCodeDialogForm
 from application.GUI.FunctionsInfoWidget import Ui_Form as FunctionsInfoWidget
 from application.GUI.HexEditDialog import Ui_Dialog as HexEditDialog
@@ -69,7 +69,6 @@ from application.GUI.MainWindow import Ui_MainWindow as MainWindow
 from application.GUI.MemoryRegionsWidget import Ui_Form as MemoryRegionsWidget
 # If you are going to change the name "Ui_MainWindow_MemoryView", review GUI/CustomLabels/RegisterLabel.py as well
 from application.GUI.MemoryViewerWindow import Ui_MainWindow_MemoryView as MemoryViewWindow
-from application.GUI.ReferencedCallsWidget import Ui_Form as ReferencedCallsWidget
 from application.GUI.ReferencedStringsWidget import Ui_Form as ReferencedStringsWidget
 from application.GUI.SearchOpcodeWidget import Ui_Form as SearchOpcodeWidget
 from application.GUI.TraceInstructionsPromptDialog import Ui_Dialog as TraceInstructionsPromptDialog
@@ -87,7 +86,7 @@ from application.Settings import Break, current_settings_version, show_messagebo
     SEARCH_OPCODE_ADDR_COL, SEARCH_OPCODE_OPCODES_COL, MEMORY_REGIONS_ADDR_COL, MEMORY_REGIONS_PERM_COL, \
     MEMORY_REGIONS_SIZE_COL, MEMORY_REGIONS_PATH_COL, MEMORY_REGIONS_RSS_COL, MEMORY_REGIONS_PSS_COL, \
     MEMORY_REGIONS_SHRCLN_COL, MEMORY_REGIONS_SHRDRTY_COL, MEMORY_REGIONS_PRIVCLN_COL, MEMORY_REGIONS_PRIVDRTY_COL, \
-    MEMORY_REGIONS_REF_COL, MEMORY_REGIONS_ANON_COL, MEMORY_REGIONS_SWAP_COL, REF_STR_ADDR_COL, REF_STR_COUNT_COL, REF_STR_VAL_COL, REF_CALL_ADDR_COL, REF_CALL_COUNT_COL
+    MEMORY_REGIONS_REF_COL, MEMORY_REGIONS_ANON_COL, MEMORY_REGIONS_SWAP_COL, REF_STR_ADDR_COL, REF_STR_COUNT_COL, REF_STR_VAL_COL
 from application.Threads.AwaitProcessExitThread import AwaitProcessExit
 from application.Threads.UpdateAdressTableThread import UpdateAddressTableThread
 from application.constants import PC_COLOUR, BOOKMARK_COLOUR, FROZEN_COL, VALUE_COL, ADDR_COL, DESC_COL, REF_COLOUR, \
@@ -3502,258 +3501,6 @@ class ReferencedStringsWidgetForm(QWidget, ReferencedStringsWidget):
             actions[action]()
         except KeyError:
             pass
-
-    def listWidget_Referrers_context_menu_event(self, event):
-        def copy_to_clipboard(row):
-            app.clipboard().setText(self.listWidget_Referrers.item(row).text())
-
-        selected_row = GuiUtils.get_current_row(self.listWidget_Referrers)
-
-        menu = QMenu()
-        copy_address = menu.addAction("Copy Address")
-        if selected_row == -1:
-            GuiUtils.delete_menu_entries(menu, [copy_address])
-        font_size = self.listWidget_Referrers.font().pointSize()
-        menu.setStyleSheet("font-size: " + str(font_size) + "pt;")
-        action = menu.exec_(event.globalPos())
-        actions = {
-            copy_address: lambda: copy_to_clipboard(selected_row)
-        }
-        try:
-            actions[action]()
-        except KeyError:
-            pass
-
-    def closeEvent(self, QCloseEvent):
-
-        instances.remove(self)
-
-
-class ReferencedCallsWidgetForm(QWidget, ReferencedCallsWidget):
-    def __init__(self, parent=None):
-        super().__init__()
-        self.setupUi(self)
-        self.parent = lambda: parent
-
-        instances.append(self)
-        GuiUtils.center_to_parent(self)
-        self.setWindowFlags(Qt.Window)
-        self.tableWidget_References.setColumnWidth(REF_CALL_ADDR_COL, 480)
-        self.splitter.setStretchFactor(0, 1)
-        self.listWidget_Referrers.resize(400, self.listWidget_Referrers.height())
-        self.hex_len = 16 if GDB_Engine.inferior_arch == type_defs.INFERIOR_ARCH.ARCH_64 else 8
-        str_dict, jmp_dict, call_dict = GDB_Engine.get_dissect_code_data()
-        if len(str_dict) == 0 and len(jmp_dict) == 0 and len(call_dict) == 0:
-            confirm_dialog = InputDialogForm(item_list=[("You need to dissect code first\nProceed?",)])
-            if confirm_dialog.exec_():
-                dissect_code_dialog = DissectCodeDialogForm()
-                dissect_code_dialog.scan_finished_signal.connect(dissect_code_dialog.accept)
-                dissect_code_dialog.exec_()
-        str_dict.close()
-        jmp_dict.close()
-        call_dict.close()
-        self.refresh_table()
-        self.tableWidget_References.sortByColumn(REF_CALL_ADDR_COL, Qt.AscendingOrder)
-        self.tableWidget_References.selectionModel().currentChanged.connect(self.tableWidget_References_current_changed)
-        self.listWidget_Referrers.itemDoubleClicked.connect(self.listWidget_Referrers_item_double_clicked)
-        self.tableWidget_References.itemDoubleClicked.connect(self.tableWidget_References_item_double_clicked)
-        self.tableWidget_References.contextMenuEvent = self.tableWidget_References_context_menu_event
-        self.listWidget_Referrers.contextMenuEvent = self.listWidget_Referrers_context_menu_event
-        self.pushButton_Search.clicked.connect(self.refresh_table)
-        self.shortcut_search = QShortcut(QKeySequence("Return"), self)
-        self.shortcut_search.activated.connect(self.refresh_table)
-
-    def pad_hex(self, hex_str):
-        index = hex_str.find(" ")
-        if index == -1:
-            self_len = 0
-        else:
-            self_len = len(hex_str) - index
-        return '0x' + hex_str[2:].zfill(self.hex_len + self_len)
-
-    def refresh_table(self):
-        item_list = GDB_Engine.search_referenced_calls(self.lineEdit_Regex.text(),
-                                                       self.checkBox_CaseSensitive.isChecked(),
-                                                       self.checkBox_Regex.isChecked())
-        if item_list is None:
-            QMessageBox.information(self, "Error",
-                                    "An exception occurred while trying to compile the given regex\n")
-            return
-        self.tableWidget_References.setSortingEnabled(False)
-        self.tableWidget_References.setRowCount(0)
-        self.tableWidget_References.setRowCount(len(item_list))
-        for row, item in enumerate(item_list):
-            self.tableWidget_References.setItem(row, REF_CALL_ADDR_COL, QTableWidgetItem(self.pad_hex(item[0])))
-            table_widget_item = QTableWidgetItem()
-            table_widget_item.setData(Qt.EditRole, item[1])
-            self.tableWidget_References.setItem(row, REF_CALL_COUNT_COL, table_widget_item)
-        self.tableWidget_References.setSortingEnabled(True)
-
-    def tableWidget_References_current_changed(self, QModelIndex_current):
-        if QModelIndex_current.row() < 0:
-            return
-        self.listWidget_Referrers.clear()
-        call_dict = GDB_Engine.get_dissect_code_data(False, False, True)[0]
-        addr = self.tableWidget_References.item(QModelIndex_current.row(), REF_CALL_ADDR_COL).text()
-        referrers = call_dict[hex(int(SysUtils.extract_address(addr), 16))]
-        addrs = [hex(address) for address in referrers]
-        self.listWidget_Referrers.addItems([self.pad_hex(item.all) for item in GDB_Engine.examine_expressions(addrs)])
-        self.listWidget_Referrers.sortItems(Qt.AscendingOrder)
-        call_dict.close()
-
-    def tableWidget_References_item_double_clicked(self, index):
-        row = index.row()
-        address = self.tableWidget_References.item(row, REF_CALL_ADDR_COL).text()
-        self.parent().disassemble_expression(SysUtils.extract_address(address), append_to_travel_history=True)
-
-    def listWidget_Referrers_item_double_clicked(self, item):
-        self.parent().disassemble_expression(SysUtils.extract_address(item.text()), append_to_travel_history=True)
-
-    def tableWidget_References_context_menu_event(self, event):
-        def copy_to_clipboard(row, column):
-            app.clipboard().setText(self.tableWidget_References.item(row, column).text())
-
-        selected_row = GuiUtils.get_current_row(self.tableWidget_References)
-
-        menu = QMenu()
-        copy_address = menu.addAction("Copy Address")
-        if selected_row == -1:
-            GuiUtils.delete_menu_entries(menu, [copy_address])
-        font_size = self.tableWidget_References.font().pointSize()
-        menu.setStyleSheet("font-size: " + str(font_size) + "pt;")
-        action = menu.exec_(event.globalPos())
-        actions = {
-            copy_address: lambda: copy_to_clipboard(selected_row, REF_CALL_ADDR_COL)
-        }
-        try:
-            actions[action]()
-        except KeyError:
-            pass
-
-    def listWidget_Referrers_context_menu_event(self, event):
-        def copy_to_clipboard(row):
-            app.clipboard().setText(self.listWidget_Referrers.item(row).text())
-
-        selected_row = GuiUtils.get_current_row(self.listWidget_Referrers)
-
-        menu = QMenu()
-        copy_address = menu.addAction("Copy Address")
-        if selected_row == -1:
-            GuiUtils.delete_menu_entries(menu, [copy_address])
-        font_size = self.listWidget_Referrers.font().pointSize()
-        menu.setStyleSheet("font-size: " + str(font_size) + "pt;")
-        action = menu.exec_(event.globalPos())
-        actions = {
-            copy_address: lambda: copy_to_clipboard(selected_row)
-        }
-        try:
-            actions[action]()
-        except KeyError:
-            pass
-
-    def closeEvent(self, QCloseEvent):
-
-        instances.remove(self)
-
-
-class ExamineReferrersWidgetForm(QWidget, ExamineReferrersWidget):
-    def __init__(self, int_address, parent=None):
-        super().__init__()
-        self.referrer_data = []
-        self.setupUi(self)
-        self.parent = lambda: parent
-
-        instances.append(self)
-        GuiUtils.center_to_parent(self)
-        self.setWindowFlags(Qt.Window)
-        self.splitter.setStretchFactor(0, 1)
-        self.textBrowser_DisasInfo.resize(600, self.textBrowser_DisasInfo.height())
-        self.referenced_hex = hex(int_address)
-        self.hex_len = 16 if GDB_Engine.inferior_arch == type_defs.INFERIOR_ARCH.ARCH_64 else 8
-        self.collect_referrer_data()
-        self.refresh_table()
-        self.listWidget_Referrers.sortItems(Qt.AscendingOrder)
-        self.listWidget_Referrers.selectionModel().currentChanged.connect(self.listWidget_Referrers_current_changed)
-        self.listWidget_Referrers.itemDoubleClicked.connect(self.listWidget_Referrers_item_double_clicked)
-        self.listWidget_Referrers.contextMenuEvent = self.listWidget_Referrers_context_menu_event
-        self.pushButton_Search.clicked.connect(self.refresh_table)
-        self.shortcut_search = QShortcut(QKeySequence("Return"), self)
-        self.shortcut_search.activated.connect(self.refresh_table)
-
-    def pad_hex(self, hex_str):
-        index = hex_str.find(" ")
-        if index == -1:
-            self_len = 0
-        else:
-            self_len = len(hex_str) - index
-        return '0x' + hex_str[2:].zfill(self.hex_len + self_len)
-
-    def collect_referrer_data(self):
-        jmp_dict, call_dict = GDB_Engine.get_dissect_code_data(False, True, True)
-        self.referrer_data.clear()
-        try:
-            jmp_referrers = jmp_dict[self.referenced_hex]
-        except KeyError:
-            pass
-        else:
-            jmp_referrers = [hex(item) for item in jmp_referrers]
-            self.referrer_data.extend([item.all for item in GDB_Engine.examine_expressions(jmp_referrers)])
-        try:
-            call_referrers = call_dict[self.referenced_hex]
-        except KeyError:
-            pass
-        else:
-            call_referrers = [hex(item) for item in call_referrers]
-            self.referrer_data.extend([item.all for item in GDB_Engine.examine_expressions(call_referrers)])
-        jmp_dict.close()
-        call_dict.close()
-
-    def refresh_table(self):
-        searched_str = self.lineEdit_Regex.text()
-        case_sensitive = self.checkBox_CaseSensitive.isChecked()
-        enable_regex = self.checkBox_Regex.isChecked()
-        if enable_regex:
-            try:
-                if case_sensitive:
-                    regex = re.compile(searched_str)
-                else:
-                    regex = re.compile(searched_str, re.IGNORECASE)
-            except:
-                QMessageBox.information(self, "Error",
-                                        "An exception occurred while trying to compile the given regex\n")
-                return
-        self.listWidget_Referrers.setSortingEnabled(False)
-        self.listWidget_Referrers.clear()
-        for row, item in enumerate(self.referrer_data):
-            if enable_regex:
-                if not regex.search(item):
-                    continue
-            else:
-                if case_sensitive:
-                    if item.find(searched_str) == -1:
-                        continue
-                else:
-                    if item.lower().find(searched_str.lower()) == -1:
-                        continue
-            self.listWidget_Referrers.addItem(item)
-        self.listWidget_Referrers.setSortingEnabled(True)
-        self.listWidget_Referrers.sortItems(Qt.AscendingOrder)
-
-    def listWidget_Referrers_current_changed(self, QModelIndex_current):
-        if QModelIndex_current.row() < 0:
-            return
-        self.textBrowser_DisasInfo.clear()
-        disas_data = GDB_Engine.disassemble(
-            SysUtils.extract_address(self.listWidget_Referrers.item(QModelIndex_current.row()).text()), "+200")
-        for item in disas_data:
-            self.textBrowser_DisasInfo.append(item[0] + item[2])
-        cursor = self.textBrowser_DisasInfo.textCursor()
-        cursor.movePosition(QTextCursor.Start)
-        self.textBrowser_DisasInfo.setTextCursor(cursor)
-        self.textBrowser_DisasInfo.ensureCursorVisible()
-
-    def listWidget_Referrers_item_double_clicked(self, item):
-        self.parent().disassemble_expression(SysUtils.extract_address(item.text()), append_to_travel_history=True)
 
     def listWidget_Referrers_context_menu_event(self, event):
         def copy_to_clipboard(row):
